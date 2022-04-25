@@ -1,0 +1,35 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<types:mule xmlns:types="http://www.mulesoft.org/schema/mule/types">
+  <types:catalog>
+    <types:type name="order" format="json">
+      <types:shape format="weave" example="OrderExample.json"><![CDATA[%dw 2.0
+
+type order = {|
+  orderNumber: Number {"typeId": "int"}, 
+  orderDate: String, 
+  storeNumber: Number {"typeId": "int"}, 
+  orderDetails: {|
+    orderChannel: String, 
+    orderType: String, 
+    total: Number {"typeId": "int"}
+  |}, 
+  guestDetails: {|
+    id: Number {"typeId": "int"}, 
+    name: String, 
+    frequency: String
+  |}
+|} {"example": "{\\\"orderNumber\\\":220011,\\\"orderDate\\\":\\\"03232022\\\",\\\"storeNumber\\\":11,\\\"orderDetails\\\":{\\\"orderChannel\\\":\\\"App\\\",\\\"orderType\\\":\\\"Mobile\\\",\\\"total\\\":25},\\\"guestDetails\\\":{\\\"id\\\":12466,\\\"name\\\":\\\"MM\\\",\\\"frequency\\\":\\\"New\\\"}}"}
+
+]]></types:shape>
+    </types:type>
+  </types:catalog>
+  <types:enrichment select="#8c6acbd5-78ab-4ad3-954e-2a98d3f6123b">
+    <types:processor-declaration>
+      <types:output-event>
+        <types:message>
+          <types:payload type="order"/>
+        </types:message>
+      </types:output-event>
+    </types:processor-declaration>
+  </types:enrichment>
+</types:mule>

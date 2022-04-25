@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:dynamodb="http://www.mulesoft.org/schema/mule/dynamodb" xmlns:order-data-api="http://www.mulesoft.org/schema/mule/order-data-api"
+	xmlns:http="http://www.mulesoft.org/schema/mule/http"
+	xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xmlns:s3="http://www.mulesoft.org/schema/mule/s3" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/s3 http://www.mulesoft.org/schema/mule/s3/current/mule-s3.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/order-data-api http://www.mulesoft.org/schema/mule/order-data-api/current/mule-order-data-api.xsd
+http://www.mulesoft.org/schema/mule/dynamodb http://www.mulesoft.org/schema/mule/dynamodb/current/mule-dynamodb.xsd">
+	<configuration-properties doc:name="Configuration properties" doc:id="23bc4401-bfdb-4113-b774-7c90f9155491" file="config.yaml" />
+	<s3:config name="Amazon_S3_Configuration" doc:name="Amazon S3 Configuration" doc:id="45c073ba-1da0-453e-a4e2-0fd911f8cf24" >
+		<s3:basic-connection accessKey="${awsps.access-key}" secretKey="${awsps.secret-key}" />
+	</s3:config>
+	<http:request-config name="HTTP_Request_configuration" doc:name="HTTP Request configuration" doc:id="e92fd0cd-274c-493a-b866-7bf0c2bbc1cf">
+		<http:request-connection host="localhost" port="8081" />
+	</http:request-config>
+	<order-data-api:config name="Order_Data_API_Config" doc:name="Order Data API Config" doc:id="f379b9c0-355c-434c-adad-7d97473e2652" property_host="localhost" property_port="8082" property_protocol="HTTP" property_basePath="/api"/>
+	<dynamodb:streams-config name="Amazon_DynamoDB_StreamsConfiguration" doc:name="Amazon DynamoDB StreamsConfiguration" doc:id="2c3267ea-a5f3-42bc-baa9-fd734da24d8c" >
+		<dynamodb:streams-connection accessKey="${awsps.access-key}" secretKey="${awsps.secret-key}" />
+	</dynamodb:streams-config>
+	<http:listener-config name="HTTP_Listener_config" doc:name="HTTP Listener config" doc:id="d4493d4c-e01f-44d2-b33f-977be62d6e91" >
+		<http:listener-connection host="${http.host}" port="${http.port}" />
+	</http:listener-config>
+	<dynamodb:config name="Amazon_DynamoDB_Configuration" doc:name="Amazon DynamoDB Configuration" doc:id="565f7816-75b7-46e2-9aca-039bbc91a80b" >
+		<dynamodb:basic-connection accessKey="${awsss.access-key}" secretKey="${awsss.secret-key}" />
+	</dynamodb:config>
+	<flow name="rcg-order-papi-s3" doc:id="bc2d3011-9084-4dd8-965f-abd932f52dd3" >
+		<s3:new-object-trigger doc:name="Trigger when new order is created" doc:id="807ea831-b22c-4fdf-a84f-5fe9e4e92348" config-ref="Amazon_S3_Configuration" bucketName="salesorders-03222022">
+			<scheduling-strategy >
+				<fixed-frequency frequency="5" timeUnit="SECONDS" startDelay="2"/>
+			</scheduling-strategy>
+		</s3:new-object-trigger>
+		<s3:get-object doc:name="Get new object" doc:id="bd2ca8c8-6399-4e74-b67a-d385ce60497d" config-ref="Amazon_S3_Configuration" bucketName="#[payload.bucketName]" key="#[payload.key]"/>
+		<ee:transform doc:name="Transform object to order" doc:id="4bc1b506-15d7-4675-9064-e7916335d42b" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+payload]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<order-data-api:create-new-order doc:name="Create new order in Snowflake" doc:id="16cb2995-f1ea-484a-b1ff-c159734d3ff9" config-ref="Order_Data_API_Config" />
+		<ee:transform doc:name="Send response" doc:id="68473aeb-5a41-443c-a673-356b5e4744e9" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	Message: p("resp.create")
+
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</flow>
+	<flow name="rcg-order-papi-dynamodb" doc:id="4ef62b09-5ca2-4f84-82f0-1f2eada8bda1" >
+		<http:listener doc:name="Listener" doc:id="ba42e910-14bb-45c2-98e1-891d275003ca" config-ref="HTTP_Listener_config" path="/newOrder/{id}"/>
+		<set-variable value="#[{&#10;	id:{&#10;		S:attributes.uriParams.id&#10;			}&#10;}]" doc:name="Save partition key" doc:id="038d209a-0b0d-4254-afaf-82459fa25eae" variableName="id"/>
+		<dynamodb:get-item doc:name="Get new item" doc:id="574d37fc-4f02-4ab8-8d00-468f1dfac7ff" config-ref="Amazon_DynamoDB_Configuration" tableName="order-ipaas-poc">
+			<dynamodb:key ><![CDATA[#[vars.id]]]></dynamodb:key>
+		</dynamodb:get-item>
+		<ee:transform doc:name="Transform item to order" doc:id="8c6acbd5-78ab-4ad3-954e-2a98d3f6123b" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	orderNumber: payload.item.display_order_num.n,
+	orderDate: ((payload.item.created_at.s default "") ++ (payload.consumedCapacity.capacityUnits as String default "")) ++ (payload.consumedCapacity.globalSecondaryIndexes as String default ""),
+	storeNumber: payload.item.location_id.s,
+	orderDetails: {
+		orderChannel: payload.item.channel.s,
+		orderType: "",
+		total: 0
+	},
+	guestDetails: {
+		id: payload.item.customer_id.n,
+		name: upper ( "" ),
+		frequency: ""
+	}
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+		<order-data-api:create-new-order doc:name="Create new order in Snowflake" doc:id="fb3f2b96-b92e-41a9-b246-f1b368ff4c23" config-ref="Order_Data_API_Config"/>
+		<ee:transform doc:name="Send response" doc:id="90574a2f-eb73-4ff6-8e92-96da7a646a12" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	Message: p("resp.create")
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+	</flow>
+</mule>

@@ -1,0 +1,15 @@
+{
+    "orderNumber": 220011,
+    "orderDate": "03232022",
+    "storeNumber": 11,
+    "orderDetails": {
+        "orderChannel": "App",
+        "orderType": "Mobile",
+        "total": 25
+    },
+    "guestDetails": {
+        "id": 12466,
+        "name": "MM",
+        "frequency": "New"
+    }
+}
